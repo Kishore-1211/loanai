@@ -1,0 +1,282 @@
+// GoldLoan AI — Prisma Schema
+// Version: 1.0
+// Database: PostgreSQL 15+
+// All monetary values in paise (BigInt). All interest rates in basis points (Int).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum Permission {
+  CREATE_CUSTOMER
+  VIEW_ALL_CUSTOMERS
+  CREATE_LOAN
+  VIEW_ALL_LOANS
+  RECORD_PAYMENT
+  VIEW_OVERDUE_LOANS
+  VIEW_REPORTS
+  USE_AI_ASSISTANT
+  MANAGE_STAFF
+}
+
+enum LoanStatus {
+  ACTIVE
+  OVERDUE
+  SETTLED
+  CLOSED
+}
+
+enum GoldItemStatus {
+  PLEDGED
+  RELEASED
+  AUCTIONED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+}
+
+enum PaymentType {
+  INTEREST_ONLY
+  PRINCIPAL_AND_INTEREST
+  FULL_SETTLEMENT
+}
+
+enum GoldPurity {
+  K18
+  K20
+  K22
+  K24
+}
+
+enum IdProofType {
+  AADHAAR
+  PAN
+  VOTER_ID
+  PASSPORT
+  DRIVING_LICENSE
+}
+
+enum InterestType {
+  FLAT_MONTHLY
+  PER_ANNUM
+}
+
+enum AuditEventType {
+  USER_CREATED
+  USER_DEACTIVATED
+  USER_PERMISSION_CHANGED
+  CUSTOMER_CREATED
+  CUSTOMER_UPDATED
+  GOLD_ITEM_CREATED
+  GOLD_ITEM_UPDATED
+  LOAN_CREATED
+  LOAN_UPDATED
+  LOAN_SETTLED
+  LOAN_CLOSED
+  PAYMENT_RECORDED
+  RECEIPT_GENERATED
+  SETTINGS_CHANGED
+  AI_QUERY_EXECUTED
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String
+  fullName     String
+  role         Role
+  permissions  Permission[]
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  loansCreated     Loan[]     @relation("LoanCreatedBy")
+  paymentsRecorded Payment[]  @relation("PaymentRecordedBy")
+  auditLogs        AuditLog[] @relation("AuditPerformedBy")
+  customersCreated Customer[] @relation("CustomerCreatedBy")
+}
+
+model Customer {
+  id            String      @id @default(uuid())
+  fullName      String
+  mobileNumber  String      @unique
+  address       String
+  idProofType   IdProofType
+  idProofNumber String
+  dateOfBirth   DateTime?
+  photoUrl      String?
+  idDocumentUrl String?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  createdById   String?
+
+  createdBy User?      @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  loans     Loan[]
+  goldItems GoldItem[]
+
+  @@index([fullName])
+  @@index([idProofNumber])
+}
+
+model GoldItem {
+  id                  String         @id @default(uuid())
+  customerId          String
+  loanId              String?
+  description         String
+  weightGrams         Decimal        @db.Decimal(8, 3)
+  purity              GoldPurity
+  estimatedValuePaise BigInt
+  photoUrl            String?
+  conditionNotes      String?
+  status              GoldItemStatus @default(PLEDGED)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  loan     Loan?    @relation(fields: [loanId], references: [id])
+
+  @@index([customerId])
+  @@index([loanId])
+  @@index([status])
+}
+
+model Loan {
+  id             String       @id @default(uuid())
+  loanNumber     String       @unique
+  customerId     String
+  createdById    String
+  principalPaise BigInt
+  monthlyRateBps Int
+  interestType   InterestType @default(FLAT_MONTHLY)
+  startDate      DateTime
+  dueDate        DateTime
+  tenureMonths   Int
+  status         LoanStatus   @default(ACTIVE)
+  settledAt      DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  customer  Customer   @relation(fields: [customerId], references: [id])
+  createdBy User       @relation("LoanCreatedBy", fields: [createdById], references: [id])
+  goldItems GoldItem[]
+  payments  Payment[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([createdById])
+}
+
+model Payment {
+  id                   String        @id @default(uuid())
+  loanId               String
+  recordedById         String
+  paymentDate          DateTime
+  totalAmountPaise     BigInt
+  interestAmountPaise  BigInt
+  principalAmountPaise BigInt
+  paymentMethod        PaymentMethod
+  paymentType          PaymentType
+  referenceNumber      String?
+  notes                String?
+  createdAt            DateTime      @default(now())
+
+  loan       Loan     @relation(fields: [loanId], references: [id])
+  recordedBy User     @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  receipt    Receipt?
+
+  @@index([loanId])
+  @@index([paymentDate])
+  @@index([recordedById])
+}
+
+model Receipt {
+  id                    String        @id @default(uuid())
+  receiptNumber         String        @unique
+  paymentId             String        @unique
+  businessName          String
+  businessAddress       String
+  customerName          String
+  customerMobile        String
+  loanNumber            String
+  paymentDate           DateTime
+  amountPaidPaise       BigInt
+  paymentMethod         PaymentMethod
+  outstandingAfterPaise BigInt
+  recordedByName        String
+  footerText            String?
+  createdAt             DateTime      @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+}
+
+model AuditLog {
+  id              String         @id @default(uuid())
+  eventType       AuditEventType
+  performedById   String
+  performedByName String
+  affectedModel   String
+  affectedId      String
+  beforeValue     Json?
+  afterValue      Json?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+
+  performedBy User @relation("AuditPerformedBy", fields: [performedById], references: [id])
+
+  @@index([performedById])
+  @@index([eventType])
+  @@index([affectedModel])
+  @@index([affectedId])
+  @@index([affectedModel, affectedId])
+  @@index([createdAt])
+}
+
+model BusinessSettings {
+  id                    String       @id @default("singleton")
+  businessName          String
+  businessAddress       String
+  businessPhone         String?
+  defaultMonthlyRateBps Int
+  defaultInterestType   InterestType @default(FLAT_MONTHLY)
+  defaultTenureMonths   Int          @default(3)
+  currencySymbol        String       @default("Rs.")
+  receiptFooterText     String?
+  updatedAt             DateTime     @updatedAt
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String?
+  customerId String?
+  loanId     String?
+  type       String
+  title      String
+  body       String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
