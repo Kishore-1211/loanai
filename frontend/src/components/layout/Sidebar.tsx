@@ -28,7 +28,7 @@ const navItems = [
   { href: '/audit-logs', label: 'Audit Logs', icon: Shield, ownerOnly: true },
 ] as const;
 
-export function Sidebar() {
+export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
   const isOwner = useAuthStore((s) => s.isOwner);
   const hasPermission = useAuthStore((s) => s.hasPermission);
@@ -40,7 +40,23 @@ export function Sidebar() {
   });
 
   return (
-    <aside className="w-60 bg-white border-r border-slate-200 flex flex-col h-full shrink-0">
+    <>
+      {/* Backdrop — only on mobile while the drawer is open */}
+      <div
+        className={cn(
+          'fixed inset-0 z-40 bg-black/40 transition-opacity md:hidden',
+          open ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 w-60 bg-white border-r border-slate-200 flex flex-col h-full shrink-0',
+          'transform transition-transform duration-200 md:static md:translate-x-0',
+          open ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
       <div className="p-4 border-b border-slate-200">
         <div className="flex items-center gap-2">
           <Coins className="h-6 w-6 text-yellow-600" />
@@ -57,6 +73,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                 isActive
@@ -72,5 +89,6 @@ export function Sidebar() {
         })}
       </nav>
     </aside>
+    </>
   );
 }
